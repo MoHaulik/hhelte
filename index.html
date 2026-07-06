@@ -49,7 +49,8 @@
 import * as THREE from 'three';
 
 // ================= CONFIG =================
-const TILE = 0.08, MAP = 16;
+const TILE = 0.08, MAP = 22; // map +40%
+const UNIT_SCALE = .011;     // charming miniatures — ~20% of the old size
 const COLORS = {
     GRASS:0x8BC34A, GRASS_DARK:0x689F38, WATER:0x29B6F6, STONE:0x90A4AE, TREE:0x2E7D32, TRUNK:0x5D4037,
     MOVE:0x64FFDA, ATTACK:0xFF5252, SELECT:0xFFD740, TEAM_P:0x4CAF50, TEAM_E:0xF44336
@@ -211,7 +212,7 @@ class FloatText {
         const m = new THREE.Mesh(new THREE.PlaneGeometry(.09*sc,.034*sc),
             new THREE.MeshBasicMaterial({ map:tex, transparent:true, depthTest:false }));
         m.renderOrder = 999;
-        m.position.copy(pos); m.position.y += TILE*1.7;
+        m.position.copy(pos); m.position.y += TILE*.7;
         m.scale.setScalar(.1);
         this.root.add(m);
         this.items.push({m, life:1});
@@ -241,7 +242,7 @@ class Banner {
             new THREE.MeshBasicMaterial({ map:this.tex, transparent:true, depthTest:false, opacity:0 }));
         this.mesh.renderOrder = 998;
         // High above the UI panel + map controls so banners never clip them
-        this.mesh.position.set(0,.72,0);
+        this.mesh.position.set(0,.92,0);
         this.mesh.visible = false;
         root.add(this.mesh);
     }
@@ -272,7 +273,7 @@ class WorldUI {
     constructor(){
         this.group = new THREE.Group();
         this.group.visible = false;
-        this.group.position.set(0, .36, 0);
+        this.group.position.set(0, .52, 0); // well clear of the board
         this.canvas = document.createElement('canvas');
         this.canvas.width = 512; this.canvas.height = 256;
         this.ctx = this.canvas.getContext('2d');
@@ -821,7 +822,7 @@ class VoxelEngine {
         const spec = TYPES[u.type];
         const seed = Math.abs(u.id*7 + u.x*3 + u.z*5 + (u.team==='player'?1:2));
         const { model, mats } = buildWarrior(spec.cls, spec.tier, u.team, seed);
-        model.scale.setScalar(.052*scale);
+        model.scale.setScalar(UNIT_SCALE*scale);
         model.traverse(m=>{ m.castShadow = false; m.receiveShadow = false; });
         u.body = model;
         u.allMats = mats;
@@ -829,25 +830,25 @@ class VoxelEngine {
             new THREE.MeshBasicMaterial({ color: u.team==='player'?COLORS.TEAM_P:COLORS.TEAM_E, transparent:true, opacity:.55 }));
         disc.position.y = .002;
         const bar = new THREE.Group();
-        const bg = new THREE.Mesh(new THREE.PlaneGeometry(.055,.009), new THREE.MeshBasicMaterial({color:0x111111, depthTest:false, transparent:true}));
-        u.hpGhost = new THREE.Mesh(new THREE.PlaneGeometry(.05,.005), new THREE.MeshBasicMaterial({color:0xffffff, depthTest:false, transparent:true, opacity:.85}));
+        const bg = new THREE.Mesh(new THREE.PlaneGeometry(.036,.006), new THREE.MeshBasicMaterial({color:0x111111, depthTest:false, transparent:true}));
+        u.hpGhost = new THREE.Mesh(new THREE.PlaneGeometry(.032,.0035), new THREE.MeshBasicMaterial({color:0xffffff, depthTest:false, transparent:true, opacity:.85}));
         u.hpGhost.position.z = .0005;
-        u.hpFill = new THREE.Mesh(new THREE.PlaneGeometry(.05,.005), new THREE.MeshBasicMaterial({color:0x4CAF50, depthTest:false, transparent:true}));
+        u.hpFill = new THREE.Mesh(new THREE.PlaneGeometry(.032,.0035), new THREE.MeshBasicMaterial({color:0x4CAF50, depthTest:false, transparent:true}));
         u.hpFill.position.z = .001;
         bg.renderOrder = 990; u.hpGhost.renderOrder = 991; u.hpFill.renderOrder = 992;
         bar.add(bg, u.hpGhost, u.hpFill);
-        bar.position.y = TILE*1.95*scale;
+        bar.position.y = TILE*.55*scale;
         u.hpBar = bar;
-        const hit = new THREE.Mesh(new THREE.BoxGeometry(TILE*1.1,TILE*1.9,TILE*1.1), new THREE.MeshBasicMaterial({visible:false}));
-        hit.position.y = TILE*.9;
+        const hit = new THREE.Mesh(new THREE.BoxGeometry(TILE*1.0,TILE*1.0,TILE*1.0), new THREE.MeshBasicMaterial({visible:false}));
+        hit.position.y = TILE*.5;
         g.add(hit, model, disc, bar);
         // Ready marker: bobbing green arrow = "this hero can still act"
         if(u.team==='player'){
-            const mk = new THREE.Mesh(new THREE.ConeGeometry(.013,.028,6).rotateX(Math.PI),
+            const mk = new THREE.Mesh(new THREE.ConeGeometry(.009,.02,6).rotateX(Math.PI),
                 new THREE.MeshBasicMaterial({ color:0x4CAF50, depthTest:false, transparent:true, opacity:.95 }));
             mk.renderOrder = 993;
             mk.raycast = ()=>{};
-            mk.position.y = TILE*2.25*scale;
+            mk.position.y = TILE*.85*scale;
             mk.visible = false;
             u.readyMark = mk;
             g.add(mk);
@@ -862,7 +863,7 @@ class VoxelEngine {
         addTween(360, p=>{
             g.visible = true;
             const e = easeOutCubic(p);
-            g.position.y = gy + (1-e)*.35;
+            g.position.y = gy + (1-e)*.15;
             g.scale.setScalar(.3+e*.7);
         }, ()=>{
             g.position.y = gy; g.scale.setScalar(1);
@@ -875,19 +876,19 @@ class VoxelEngine {
     }
     updateHpBarInstant(u){
         const s = Math.max(u.hp/u.maxHp, 0.001);
-        [u.hpFill, u.hpGhost].forEach(b=>{ b.scale.x = s; b.position.x = -0.025*(1-s); });
+        [u.hpFill, u.hpGhost].forEach(b=>{ b.scale.x = s; b.position.x = -0.016*(1-s); });
         u.hpFill.material.color.setHex(s>.5 ? 0x4CAF50 : s>.25 ? 0xFFC107 : 0xF44336);
     }
     updateHpBar(u){
         const s = Math.max(u.hp/u.maxHp, 0.001);
         u.hpFill.scale.x = s;
-        u.hpFill.position.x = -0.025*(1-s);
+        u.hpFill.position.x = -0.016*(1-s);
         u.hpFill.material.color.setHex(s>.5 ? 0x4CAF50 : s>.25 ? 0xFFC107 : 0xF44336);
         const g0 = u.hpGhost.scale.x;
         addTween(350, p=>{
             const gs = g0+(s-g0)*easeOutCubic(p);
             u.hpGhost.scale.x = gs;
-            u.hpGhost.position.x = -0.025*(1-gs);
+            u.hpGhost.position.x = -0.016*(1-gs);
         }, null, 280);
     }
     reachable(u){
@@ -967,19 +968,19 @@ class VoxelEngine {
     fireProjectile(a, d, cb){
         this.faceTowards(a.mesh, d.mesh.position);
         punch(a.body, .25, 160);
-        const m = new THREE.Mesh(new THREE.BoxGeometry(.014,.014,.03), new THREE.MeshBasicMaterial({color:0xFFEB3B}));
-        const from = a.mesh.position.clone(); from.y += TILE*1.1;
-        const to = d.mesh.position.clone(); to.y += TILE*1.1;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(.006,.006,.014), new THREE.MeshBasicMaterial({color:0xFFEB3B}));
+        const from = a.mesh.position.clone(); from.y += TILE*.25;
+        const to = d.mesh.position.clone(); to.y += TILE*.25;
         this.fxGroup.add(m);
         addTween(260, p=>{
             m.position.lerpVectors(from, to, p);
-            m.position.y += Math.sin(p*Math.PI)*.05;
+            m.position.y += Math.sin(p*Math.PI)*.025;
             m.lookAt(this.boardRoot.localToWorld(to.clone()));
             if(Math.random()>.5) this.particles.emit(m.position, 1, 0xFFEB3B, {spread:.005, up:.005, decay:.08, size:.6});
         }, ()=>{ this.fxGroup.remove(m); cb(); });
     }
     killUnit(u){
-        const pos = u.mesh.position.clone().setY(u.mesh.position.y+TILE*.5);
+        const pos = u.mesh.position.clone().setY(u.mesh.position.y+TILE*.2);
         this.particles.emit(pos, 14, u.baseColor, {spread:.09, up:.07});
         this.particles.emit(pos, 10, 0x555555, {spread:.06, up:.05});
         this.particles.emit(pos, 6, 0xFFCCBC, {spread:.07, up:.06});
@@ -1097,6 +1098,17 @@ class Game {
         this.ui.showTurn(team, this.alive('player').length, this.alive('enemy').length, this.mission);
         this.engine.banner.show(team==='player'?'YOUR TURN':'ENEMY TURN', team==='player'?'#4CAF50':'#F44336');
         if(team==='enemy') this.runEnemyTurn();
+        else this.autoSelectNext(900); // Civ-style: hand the player their first ready hero
+    }
+    // Civ-style unit cycling: auto-select the next hero with actions left.
+    // Never fights the player — only fires if nothing is selected.
+    autoSelectNext(delay=400){
+        const mid = this.mid;
+        setTimeout(()=>{
+            if(mid!==this.mid || this.over || this.turn!=='player' || this.state!=='IDLE' || this.sel) return;
+            const next = this.alive('player').find(u=>!u.acted);
+            if(next){ sfx.select(); this.selectUnit(next); }
+        }, delay);
     }
     // ---------- MISSION CLEAR & UPGRADE DRAFT ----------
     missionClear(){
@@ -1287,7 +1299,7 @@ class Game {
         if(this.alive('player').every(p=>p.acted)){
             const mid = this.mid;
             setTimeout(()=>{ if(mid===this.mid && !this.over && this.turn==='player' && this.state==='IDLE') this.startTurn('enemy'); }, 650);
-        }
+        } else this.autoSelectNext(450); // hand over the next ready hero
     }
     moveUnit(u, x, z, cb){
         this.engine.grid[key(u.x,u.z)].occupiedBy = null;
@@ -1317,7 +1329,7 @@ class Game {
         const pos = tgt.mesh.position.clone();
         this.engine.flashUnit(tgt, crit?0xFFD740:0xffffff);
         punch(tgt.body, crit?.45:.3, 220);
-        this.engine.particles.emit(pos.clone().setY(pos.y+TILE*.5), crit?24:12, crit?0xFFD740:0xFF3333, {spread:crit?.09:.06});
+        this.engine.particles.emit(pos.clone().setY(pos.y+TILE*.2), crit?24:12, crit?0xFFD740:0xFF3333, {spread:crit?.09:.06});
         this.engine.impactRing(pos, crit?COLORS.SELECT:COLORS.ATTACK, crit?1.6:1);
         this.engine.addShake(crit?.011:.005);
         if(crit) hitStop(130, .06); else hitStop(60, .25);
@@ -1553,7 +1565,7 @@ function pickTarget(ctrl){
     };
     game.units.forEach(u=>{
         if(u.isDead || !u.mesh) return;
-        consider(u.mesh, u.team==='player' ? .7 : .85, TILE*.9*engine.boardRoot.scale.x);
+        consider(u.mesh, u.team==='player' ? .7 : .85, TILE*.3*engine.boardRoot.scale.x);
     });
     engine.highlights.forEach(h=>consider(h, 1));
     if(ui.group.visible) ui.group.traverse(o=>{
@@ -1632,7 +1644,7 @@ function render(t, frame){
                     hk = key(u.x,u.z);
                     engine.cursor.visible = true;
                     const h = u.isUnit ? engine.grid[key(u.unitRef.x,u.unitRef.z)]?.height||0 : (u.h||0);
-                    engine.cursor.position.set(u.x*TILE, h*TILE + TILE*2.6, u.z*TILE);
+                    engine.cursor.position.set(u.x*TILE, h*TILE + TILE*1.3, u.z*TILE);
                 } else engine.cursor.visible = false;
             } else engine.cursor.visible = false;
             if(hk !== hoveredKey){ hoveredKey = hk; if(hk) sfx.tone(1200,.02,'sine',.02); }
@@ -1668,7 +1680,7 @@ function render(t, frame){
                 u.readyMark.visible = !u.acted && game.turn==='player' && !game.over
                     && ['IDLE','SELECTED'].includes(game.state);
                 if(u.readyMark.visible)
-                    u.readyMark.position.y = TILE*2.25 + Math.sin(t/250+i)*.007;
+                    u.readyMark.position.y = TILE*.85 + Math.sin(t/250+i)*.005;
             }
         });
         if(t > nextHop && (game.state==='IDLE'||game.state==='SELECTED')){
@@ -1677,7 +1689,7 @@ function render(t, frame){
             if(ready.length){
                 const u = ready[Math.floor(Math.random()*ready.length)];
                 const gy = engine.tileY(u.x,u.z);
-                addTween(320, p=>{ if(!u.isDead) u.mesh.position.y = gy + Math.sin(p*Math.PI)*TILE*.35; });
+                addTween(320, p=>{ if(!u.isDead) u.mesh.position.y = gy + Math.sin(p*Math.PI)*TILE*.15; });
             }
         }
         if(engine.selRing.visible){
@@ -1692,8 +1704,7 @@ function render(t, frame){
         }
         engine.cursor.rotation.y = t/300;
         engine.cursor.position.y += Math.sin(t/250)*.0006;
-        // Live hero portrait slowly turns on its card
-        if(ui.charCard.visible) ui.ccModelSlot.rotation.y += dt*.0012;
+        // (Hero portrait faces the user — the card group billboards with the UI)
     }
     renderer.render(scene, camera);
 }
