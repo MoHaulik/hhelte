@@ -39,7 +39,9 @@
     Clear missions · draft upgrades · recruit heroes · survive as deep as you can.<br>
     Wounds carry between missions — fight smart. HP heals 30% after each victory.<br>
     Green arrow = hero can still act this turn.<br>
-    ⟲ ⟳ rotate map · − + zoom · 📍 move map. How far can you go?</p>
+    ⟲ ⟳ rotate map · − + zoom · 📍 move map.<br>
+    Or GRAB the world: pinch-hold with BOTH hands — spread to zoom, twist to spin, move to drag.<br>
+    How far can you go?</p>
     <button id="btn-start-ar" class="btn-main">START CAMPAIGN</button>
     <div id="unsupported-msg">WebXR not detected.<br>Use the Meta Quest Browser.</div>
 </div>
@@ -291,6 +293,81 @@ class WorldUI {
         this.cardGroup.position.y = -.19;
         this.cardGroup.visible = false;
         this.group.add(this.cardGroup);
+        this.buildCharCard();
+    }
+    // ===== FLOATING HERO CARD (live 3D portrait + stats) =====
+    buildCharCard(){
+        this.charCard = new THREE.Group();
+        this.charCard.position.set(-.27, .02, 0);
+        this.charCard.visible = false;
+        this.group.add(this.charCard);
+        this.ccUnit = null;
+        this.ccCanvas = document.createElement('canvas');
+        this.ccCanvas.width = 320; this.ccCanvas.height = 420;
+        this.ccCtx = this.ccCanvas.getContext('2d');
+        this.ccTex = new THREE.CanvasTexture(this.ccCanvas);
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(.16,.21),
+            new THREE.MeshBasicMaterial({ map:this.ccTex, transparent:true }));
+        plane.raycast = ()=>{};
+        this.charCard.add(plane);
+        this.ccModelSlot = new THREE.Group();
+        this.ccModelSlot.position.set(0, .003, .022);
+        this.charCard.add(this.ccModelSlot);
+    }
+    showCharCard(u){
+        const spec = TYPES[u.type];
+        const c = this.ccCtx;
+        c.clearRect(0,0,320,420);
+        c.fillStyle = 'rgba(14,14,24,.94)';
+        c.beginPath(); c.roundRect(6,6,308,408,26); c.fill();
+        const grad = c.createLinearGradient(0,0,0,420);
+        grad.addColorStop(0,'#FFD740'); grad.addColorStop(1,'#8a5a24');
+        c.strokeStyle = grad; c.lineWidth = 6;
+        c.beginPath(); c.roundRect(6,6,308,408,26); c.stroke();
+        // faction glow behind the 3D portrait
+        const rg = c.createRadialGradient(160,120,10,160,120,115);
+        rg.addColorStop(0, u.team==='player'?'rgba(59,130,246,.5)':'rgba(239,68,68,.5)');
+        rg.addColorStop(1,'rgba(0,0,0,0)');
+        c.fillStyle = rg; c.fillRect(20,15,280,215);
+        c.fillStyle = 'rgba(255,215,64,.25)';
+        c.beginPath(); c.ellipse(160,208,72,15,0,0,Math.PI*2); c.fill();
+        c.textAlign = 'center';
+        c.fillStyle = '#fff'; c.font = '900 36px Segoe UI, Arial';
+        c.fillText(u.type.toUpperCase(),160,262);
+        c.fillStyle = '#FFD740'; c.font = 'bold 19px Segoe UI, Arial';
+        c.fillText(`${['','MILITIA','VETERAN','ELITE'][spec.tier]} ${spec.cls.toUpperCase()}`,160,289);
+        c.fillStyle = '#333';
+        c.beginPath(); c.roundRect(40,308,240,20,10); c.fill();
+        const hpr = Math.max(u.hp/u.maxHp,0);
+        c.fillStyle = hpr>.4?'#4CAF50':'#F44336';
+        if(hpr>0){ c.beginPath(); c.roundRect(40,308,240*hpr,20,10); c.fill(); }
+        c.fillStyle = '#fff'; c.font = 'bold 16px Segoe UI, Arial';
+        c.fillText(`${u.hp} / ${u.maxHp}`,160,324);
+        c.font = 'bold 27px Segoe UI, Arial';
+        [[`⚔ ${u.atk}`,'#FF8A65'],[`👟 ${u.mov}`,'#4FC3F7'],[`🎯 ${u.rng}`,'#FFD54F']]
+            .forEach(([s,col],i)=>{ c.fillStyle = col; c.fillText(s, 68+i*92, 368); });
+        c.fillStyle = '#777'; c.font = '16px Segoe UI, Arial';
+        c.fillText(u.moved?'Pick a red target · or tap hero to wait':'Move · attack · or tap hero to wait',160,398);
+        this.ccTex.needsUpdate = true;
+        // Live rotating 3D portrait — rebuild only when the unit changes
+        if(this.ccUnit !== u){
+            this.ccUnit = u;
+            this.ccModelSlot.clear();
+            const { model } = buildWarrior(spec.cls, spec.tier, u.team, Math.abs(u.id*7+1));
+            model.scale.setScalar(.028);
+            model.traverse(m=>{ m.raycast = ()=>{}; m.castShadow = false; m.receiveShadow = false; });
+            this.ccModelSlot.add(model);
+            if(!this.charCard.visible){
+                this.charCard.visible = true;
+                this.charCard.scale.setScalar(.01);
+                addTween(260, p=>this.charCard.scale.setScalar(Math.max(easeOutBack(p),.01)));
+            }
+        }
+    }
+    hideCharCard(){
+        this.charCard.visible = false;
+        this.ccModelSlot.clear();
+        this.ccUnit = null;
     }
     makeButton(label, color, action, x, y, w, h, fontPx=38){
         const g = new THREE.Group();
@@ -1027,6 +1104,7 @@ class Game {
         this.engine.selRing.visible = false;
         this.engine.aiRing.visible = false;
         this.engine.clearHighlights();
+        this.ui.hideCharCard();
         this.engine.banner.show('MISSION CLEAR!', '#FFD740', 1600);
         sfx.win();
         const mid = this.mid;
@@ -1190,12 +1268,14 @@ class Game {
         if(u.moved && !list.some(l=>l.attack)){ this.finishUnit(u); return; }
         this.engine.showHighlights(list);
         this.ui.showUnit(u, this.mission);
+        this.ui.showCharCard(u);
     }
     deselect(){
         this.sel = null;
         if(!this.over && !['PLACING','UPGRADE'].includes(this.state)) this.state = 'IDLE';
         this.engine.selRing.visible = false;
         this.engine.clearHighlights();
+        this.ui.hideCharCard();
         if(!this.over && this.turn==='player' && this.state==='IDLE')
             this.ui.showTurn('player', this.alive('player').length, this.alive('enemy').length, this.mission);
     }
@@ -1243,7 +1323,10 @@ class Game {
         if(crit) hitStop(130, .06); else hitStop(60, .25);
         this.engine.floats.spawn(pos, counter?`↩${dmg}`:(crit?`CRIT ${dmg}!`:`-${dmg}`), crit?'#FFD740':(counter?'#90CAF9':'#FF5252'), crit);
         sfx.hit(crit);
-        if(this.sel === tgt || this.sel === src) this.ui.showUnit(this.sel, this.mission);
+        if(this.sel === tgt || this.sel === src){
+            this.ui.showUnit(this.sel, this.mission);
+            this.ui.showCharCard(this.sel);
+        }
         if(tgt.hp <= 0){
             tgt.isDead = true;
             if(tgt.team==='enemy') this.kills++;
@@ -1265,6 +1348,7 @@ class Game {
         this.engine.selRing.visible = false;
         this.engine.aiRing.visible = false;
         this.engine.clearHighlights();
+        this.ui.hideCharCard();
         this.ui.showResult(this.mission, this.kills);
         this.engine.banner.show('DEFEAT', '#F44336', 2200);
         sfx.lose();
@@ -1317,6 +1401,7 @@ const tempMatrix = new THREE.Matrix4();
 const camPos = new THREE.Vector3();
 const controllers = [];
 let hoveredBtn = null, hoveredKey = null, lastT = 0, lastTap = 0, nextHop = 3000;
+let gesture = null, suppressTapUntil = 0; // two-hand grab state
 
 init();
 function init(){
@@ -1356,6 +1441,8 @@ function init(){
         laser.scale.z = 3;
         c.add(laser);
         c.userData.laser = laser;
+        c.addEventListener('selectstart', ()=>c.userData.pinching = true);
+        c.addEventListener('selectend', ()=>c.userData.pinching = false);
         c.addEventListener('select', ()=>onSelect(c));
         scene.add(c);
         controllers.push(c);
@@ -1404,6 +1491,7 @@ function onStartAR(){
 
 function onSelect(ctrl){
     const now = performance.now();
+    if(now < suppressTapUntil) return; // release after a two-hand grab isn't a tap
     if(now - lastTap < 250) return;
     lastTap = now;
     if(game.state==='INIT' || game.state==='PLACING'){
@@ -1497,7 +1585,33 @@ function render(t, frame){
             const s = 1 + Math.sin(t/280)*.08;
             reticle.matrix.multiply(new THREE.Matrix4().makeScale(s,1,s));
         }
-        if(!placing){
+        // TWO-HAND GRAB: pinch-hold with BOTH hands, then move hands apart/together
+        // to zoom (iPhone style), twist around each other to spin, move both to pan.
+        if(!placing && controllers[0].userData.pinching && controllers[1].userData.pinching){
+            const p0 = new THREE.Vector3().setFromMatrixPosition(controllers[0].matrixWorld);
+            const p1 = new THREE.Vector3().setFromMatrixPosition(controllers[1].matrixWorld);
+            const mid = p0.clone().add(p1).multiplyScalar(.5);
+            const v = p1.clone().sub(p0);
+            const dist = Math.max(v.length(), .01);
+            const angle = Math.atan2(v.x, v.z);
+            if(!gesture){
+                gesture = { dist, angle, mid,
+                    scale:engine.boardRoot.scale.x,
+                    rot:engine.boardRoot.rotation.y,
+                    base:engine.basePos.clone() };
+                sfx.ui();
+            } else {
+                engine.boardRoot.scale.setScalar(
+                    THREE.MathUtils.clamp(gesture.scale*(dist/gesture.dist), .4, 2.5));
+                let dA = angle - gesture.angle;
+                if(dA > Math.PI) dA -= Math.PI*2;
+                if(dA < -Math.PI) dA += Math.PI*2;
+                engine.boardRoot.rotation.y = gesture.rot + dA;
+                engine.basePos.copy(gesture.base).add(mid.clone().sub(gesture.mid));
+            }
+            suppressTapUntil = performance.now() + 350; // pinch releases aren't taps
+        } else gesture = null;
+        if(!placing && !gesture){
             // Hover uses the SAME aim-assisted picker as taps — what glows is what you get
             let bestRes = null;
             controllers.forEach(c=>{
@@ -1546,6 +1660,8 @@ function render(t, frame){
         engine.banner.mesh.visible && engine.banner.mesh.lookAt(camPos);
         game.units.forEach((u,i)=>{
             if(u.isDead || !u.mesh) return;
+            // Hide bars during the draft so they never clip the upgrade cards
+            u.hpBar.visible = game.state!=='UPGRADE';
             u.hpBar.lookAt(camPos);
             if(!u.acted && game.state!=='BUSY') u.mesh.scale.y = 1 + Math.sin(t/500+i)*.02;
             if(u.readyMark){
@@ -1576,6 +1692,8 @@ function render(t, frame){
         }
         engine.cursor.rotation.y = t/300;
         engine.cursor.position.y += Math.sin(t/250)*.0006;
+        // Live hero portrait slowly turns on its card
+        if(ui.charCard.visible) ui.ccModelSlot.rotation.y += dt*.0012;
     }
     renderer.render(scene, camera);
 }
