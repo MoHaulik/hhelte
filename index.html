@@ -37,7 +37,8 @@
     <h1>Voxel Heroes</h1>
     <p class="subtitle">Endless tactical campaign on your tabletop. One input: point &amp; tap (pinch).<br>
     Clear missions · draft upgrades · recruit heroes · survive as deep as you can.<br>
-    Wounds carry between missions — fight smart. HP heals 25% after each victory.<br>
+    Wounds carry between missions — fight smart. HP heals 30% after each victory.<br>
+    Green arrow = hero can still act this turn.<br>
     ⟲ ⟳ rotate map · − + zoom · 📍 move map. How far can you go?</p>
     <button id="btn-start-ar" class="btn-main">START CAMPAIGN</button>
     <div id="unsupported-msg">WebXR not detected.<br>Use the Meta Quest Browser.</div>
@@ -279,10 +280,11 @@ class WorldUI {
         this.endBtn = this.makeButton('END TURN', 0x1976D2, 'endTurn', 0, -.118, .16, .05);
         this.restartBtn = this.makeButton('NEW CAMPAIGN', 0xF57C00, 'restart', 0, -.118, .19, .05);
         this.restartBtn.visible = false;
+        // Map controls: small, tucked ABOVE the panel — reachable but out of the way
         const bar = [ ['⟲','rotL'], ['⟳','rotR'], ['−','zoomOut'], ['+','zoomIn'], ['📍','replace'] ];
-        const w = .052, gap = .06, x0 = -(bar.length-1)*gap/2;
+        const w = .042, gap = .05, x0 = -(bar.length-1)*gap/2;
         bar.forEach(([icon,action],i)=>
-            this.makeButton(icon, 0x37474F, action, x0+i*gap, -.185, w, w, 56));
+            this.makeButton(icon, 0x263238, action, x0+i*gap, .125, w, w, 52));
         // Upgrade card slots (built on demand)
         this.cardGroup = new THREE.Group();
         this.cardGroup.position.y = -.19;
@@ -550,6 +552,17 @@ class VoxelEngine {
         const hit = new THREE.Mesh(new THREE.BoxGeometry(TILE*1.1,TILE*1.5,TILE*1.1), new THREE.MeshBasicMaterial({visible:false}));
         hit.position.y = TILE*.75;
         g.add(hit, body, head, le, re, disc, bar);
+        // Ready marker: bobbing green arrow = "this hero can still act"
+        if(u.team==='player'){
+            const mk = new THREE.Mesh(new THREE.ConeGeometry(.013,.028,6).rotateX(Math.PI),
+                new THREE.MeshBasicMaterial({ color:0x4CAF50, depthTest:false, transparent:true, opacity:.95 }));
+            mk.renderOrder = 993;
+            mk.raycast = ()=>{};
+            mk.position.y = TILE*1.6*scale;
+            mk.visible = false;
+            u.readyMark = mk;
+            g.add(mk);
+        }
         body.scale.setScalar(scale); head.scale.setScalar(scale);
         const gy = this.tileY(u.x,u.z);
         g.position.set(u.x*TILE, gy, u.z*TILE);
@@ -719,12 +732,13 @@ class Game {
     // Enemy composition: authored ramp for missions 1-6, then budget-based endless scaling
     enemyComp(m){
         const table = {
-            1:['Orc','Goblin','Goblin'],
-            2:['Orc','Orc','Goblin','Goblin'],
-            3:['Warlord','Orc','Goblin','Goblin'],
-            4:['Shaman','Orc','Orc','Goblin','Goblin'],
-            5:['Brute','Shaman','Orc','Orc','Goblin'],
-            6:['Warlord','Brute','Shaman','Goblin','Goblin','Goblin']
+            1:['Goblin','Goblin'],
+            2:['Orc','Goblin','Goblin'],
+            3:['Orc','Orc','Goblin','Goblin'],
+            4:['Warlord','Orc','Goblin','Goblin'],
+            5:['Shaman','Orc','Orc','Goblin','Goblin'],
+            6:['Brute','Shaman','Orc','Orc','Goblin'],
+            7:['Warlord','Brute','Shaman','Goblin','Goblin','Goblin']
         };
         if(table[m]) return table[m];
         const cost = { Goblin:1, Orc:2, Shaman:2, Brute:3, Warlord:4 };
@@ -760,7 +774,7 @@ class Game {
         });
         // Enemies (scaling past mission 3)
         const eSpots = [[2,0],[3,-2],[3,2],[4,0],[2,-3],[2,3],[4,-1],[4,1]];
-        const mul = 1 + Math.max(0, this.mission-3)*.12;
+        const mul = 1 + Math.max(0, this.mission-4)*.12;
         this.enemyComp(this.mission).forEach((type,i)=>{
             if(i >= eSpots.length) return;
             const [x,z] = eSpots[i];
@@ -816,7 +830,7 @@ class Game {
         this.party.forEach(h=>{
             const u = this.units.find(x=>x.heroRef===h);
             const maxHp = this.heroMaxHp(h);
-            if(u && !u.isDead) h.hp = Math.min(maxHp, u.hp + Math.round(maxHp*.25));
+            if(u && !u.isDead) h.hp = Math.min(maxHp, u.hp + Math.round(maxHp*.3));
             else h.hp = Math.round(maxHp*.3);
         });
         setTimeout(()=>{
@@ -1005,7 +1019,7 @@ class Game {
     }
     dealDamage(src, tgt, mult, counter){
         let dmg = Math.max(1, Math.round((src.atk + (Math.random()*2-1)) * mult));
-        const critC = src.team==='player' ? this.critChance : .1;
+        const critC = src.team==='player' ? this.critChance : .08;
         const crit = !counter && Math.random() < critC;
         if(crit) dmg *= 2;
         tgt.hp = Math.max(0, tgt.hp - dmg);
@@ -1191,12 +1205,9 @@ function onSelect(ctrl){
         }
         return;
     }
-    const hits = getIntersections(ctrl);
-    if(hits.length){
-        const obj = findGameObj(hits[0].object);
-        if(obj) game.handleInput(obj);
-        else game.deselect();
-    } else game.deselect();
+    const res = pickTarget(ctrl);
+    if(res && res.obj) game.handleInput(res.obj);
+    else game.deselect();
 }
 
 function findGameObj(o){
@@ -1212,7 +1223,50 @@ function getIntersections(ctrl){
     tempMatrix.identity().extractRotation(ctrl.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
     raycaster.ray.direction.set(0,0,-1).applyMatrix4(tempMatrix);
-    return raycaster.intersectObjects([engine.tilesGroup, engine.unitsGroup, engine.overlaysGroup, ui.group], true);
+    // BUGFIX: three's raycaster hits invisible meshes — the hidden NEW CAMPAIGN
+    // button sits on top of END TURN and was swallowing taps. Filter them out.
+    return raycaster.intersectObjects([engine.tilesGroup, engine.unitsGroup, engine.overlaysGroup, ui.group], true)
+        .filter(h=>{
+            for(let o=h.object; o; o=o.parent) if(o.visible===false) return false;
+            return true;
+        });
+}
+
+// AIM ASSIST (best practice for hand-ray input): precise raycast first; if the ray
+// only grazes bare ground or misses, magnetize to the nearest interactive target
+// (unit / highlight / button) within a ~5-6° cone, weighted so friendly units win.
+function pickTarget(ctrl){
+    const hits = getIntersections(ctrl);
+    if(hits.length){
+        const obj = findGameObj(hits[0].object);
+        const ud = obj?.userData || {};
+        if(ud.isButton || ud.isUnit || ud.isHighlight) return { obj, dist:hits[0].distance };
+    }
+    const origin = raycaster.ray.origin, dir = raycaster.ray.direction;
+    let best = null, bestScore = .10;
+    const v = new THREE.Vector3();
+    const consider = (obj, weight, yOff=0)=>{
+        obj.getWorldPosition(v); v.y += yOff;
+        v.sub(origin);
+        const d = v.length();
+        if(d < .05) return;
+        const score = v.normalize().angleTo(dir) * weight;
+        if(score < bestScore){ bestScore = score; best = { obj, dist:d }; }
+    };
+    game.units.forEach(u=>{
+        if(u.isDead || !u.mesh) return;
+        consider(u.mesh, u.team==='player' ? .7 : .85, TILE*.5*engine.boardRoot.scale.x);
+    });
+    engine.highlights.forEach(h=>consider(h, 1));
+    if(ui.group.visible) ui.group.traverse(o=>{
+        if(o.userData?.isButton){
+            for(let q=o; q; q=q.parent) if(q.visible===false) return;
+            consider(o, .8);
+        }
+    });
+    if(best) return best;
+    if(hits.length) return { obj:findGameObj(hits[0].object), dist:hits[0].distance };
+    return null;
 }
 
 function render(t, frame){
@@ -1234,20 +1288,18 @@ function render(t, frame){
             reticle.matrix.multiply(new THREE.Matrix4().makeScale(s,1,s));
         }
         if(!placing){
-            let bestHit = null;
+            // Hover uses the SAME aim-assisted picker as taps — what glows is what you get
+            let bestRes = null;
             controllers.forEach(c=>{
-                const hits = getIntersections(c);
-                c.userData.laser.scale.z = hits.length ? hits[0].distance : 3;
-                if(hits.length && (!bestHit || hits[0].distance < bestHit.distance)) bestHit = hits[0];
+                const res = pickTarget(c);
+                c.userData.laser.scale.z = res ? res.dist : 3;
+                if(res && (!bestRes || res.dist < bestRes.dist)) bestRes = res;
             });
             if(hoveredBtn){ hoveredBtn.scale.setScalar(1); hoveredBtn = null; }
             let hk = null;
-            if(bestHit){
-                const obj = findGameObj(bestHit.object);
-                const u = obj?.userData || {};
-                let hidden = false;
-                for(let o=obj; o; o=o.parent) if(o.visible===false) hidden = true;
-                if(u.isButton && !hidden){
+            if(bestRes && bestRes.obj){
+                const u = bestRes.obj.userData || {};
+                if(u.isButton){
                     hk = 'btn'+u.action+(u.idx??'');
                     hoveredBtn = u.btnRoot;
                     hoveredBtn.scale.setScalar(1.15);
@@ -1286,6 +1338,12 @@ function render(t, frame){
             if(u.isDead || !u.mesh) return;
             u.hpBar.lookAt(camPos);
             if(!u.acted && game.state!=='BUSY') u.mesh.scale.y = 1 + Math.sin(t/500+i)*.02;
+            if(u.readyMark){
+                u.readyMark.visible = !u.acted && game.turn==='player' && !game.over
+                    && ['IDLE','SELECTED'].includes(game.state);
+                if(u.readyMark.visible)
+                    u.readyMark.position.y = TILE*1.6 + Math.sin(t/250+i)*.007;
+            }
         });
         if(t > nextHop && (game.state==='IDLE'||game.state==='SELECTED')){
             nextHop = t + 2500 + Math.random()*3000;
