@@ -53,18 +53,18 @@ const COLORS = {
     MOVE:0x64FFDA, ATTACK:0xFF5252, SELECT:0xFFD740, TEAM_P:0x4CAF50, TEAM_E:0xF44336
 };
 const TYPES = {
-    // Heroes
-    Knight:   { hp:24, atk:7,  mov:3, rng:1, color:0x2196F3 },
-    Ranger:   { hp:16, atk:5,  mov:4, rng:3, color:0x00BCD4 },
-    Mage:     { hp:14, atk:9,  mov:3, rng:2, color:0x9C27B0 },
-    Paladin:  { hp:26, atk:6,  mov:3, rng:1, color:0xFFC107 },
-    Berserker:{ hp:18, atk:10, mov:3, rng:1, color:0xE91E63 },
-    // Enemies
-    Goblin:   { hp:12, atk:4,  mov:4, rng:1, color:0xFF7043 },
-    Orc:      { hp:18, atk:6,  mov:3, rng:1, color:0xD32F2F },
-    Shaman:   { hp:14, atk:6,  mov:3, rng:3, color:0x7CB342 },
-    Brute:    { hp:30, atk:7,  mov:2, rng:1, color:0x6D4C41 },
-    Warlord:  { hp:30, atk:9,  mov:2, rng:1, color:0x880E4F }
+    // Heroes (Achaeans) — cls/tier drive the Bronze Age warrior builder
+    Knight:   { hp:24, atk:7,  mov:3, rng:1, color:0x2196F3, cls:'Hoplite',    tier:3 },
+    Ranger:   { hp:16, atk:5,  mov:4, rng:3, color:0x00BCD4, cls:'Archer',     tier:2 },
+    Mage:     { hp:14, atk:9,  mov:3, rng:2, color:0x9C27B0, cls:'Skirmisher', tier:2 },
+    Paladin:  { hp:26, atk:6,  mov:3, rng:1, color:0xFFC107, cls:'Hero',       tier:3 },
+    Berserker:{ hp:18, atk:10, mov:3, rng:1, color:0xE91E63, cls:'Swordsman',  tier:3 },
+    // Enemies (Trojans)
+    Goblin:   { hp:12, atk:4,  mov:4, rng:1, color:0xFF7043, cls:'Skirmisher', tier:1 },
+    Orc:      { hp:18, atk:6,  mov:3, rng:1, color:0xD32F2F, cls:'Swordsman',  tier:2 },
+    Shaman:   { hp:14, atk:6,  mov:3, rng:3, color:0x7CB342, cls:'Archer',     tier:2 },
+    Brute:    { hp:30, atk:7,  mov:2, rng:1, color:0x6D4C41, cls:'Hoplite',    tier:3 },
+    Warlord:  { hp:30, atk:9,  mov:2, rng:1, color:0x880E4F, cls:'Hero',       tier:3 }
 };
 // Upgrade draft pool (mobile roguelite style: pick 1 of 3 after every mission)
 const CARDS = [
@@ -238,7 +238,8 @@ class Banner {
         this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(.5,.098),
             new THREE.MeshBasicMaterial({ map:this.tex, transparent:true, depthTest:false, opacity:0 }));
         this.mesh.renderOrder = 998;
-        this.mesh.position.set(0,.5,0);
+        // High above the UI panel + map controls so banners never clip them
+        this.mesh.position.set(0,.72,0);
         this.mesh.visible = false;
         root.add(this.mesh);
     }
@@ -411,6 +412,217 @@ class WorldUI {
     setPlaying(){ this.endBtn.visible = true; this.restartBtn.visible = false; this.hideCards(); }
 }
 
+// ================= BRONZE AGE WARRIOR BUILDER =================
+const FACTIONS = {
+    player: { color:0x1e3a8a, secondary:0xc2410c, crest:0x991b1b, pattern:0x111111 }, // Achaean blue/bronze
+    enemy:  { color:0x7f1d1d, secondary:0xd97706, crest:0x1e3a8a, pattern:0xaa1111 }  // Trojan red/gold
+};
+const PAL = {
+    skin:[0xffdbac,0xf1c27d,0xe0ac69,0x8d5524,0xc68642],
+    bronze:0xcd7f32, darkBronze:0x8a5a24, iron:0x71717a,
+    leather:0x5c4033, wood:0x8b5a2b, clothWhite:0xe2e8f0
+};
+const geos = { box:new THREE.BoxGeometry(1,1,1), cyl:new THREE.CylinderGeometry(1,1,1,10) };
+
+function buildWarrior(cls, tier, faction, seed){
+    const group = new THREE.Group();
+    const mats = [];
+    const M = (hex,type)=>{
+        let m;
+        if(type==='metal') m = new THREE.MeshStandardMaterial({ color:hex, metalness:.85, roughness:.25 });
+        else if(type==='leather') m = new THREE.MeshStandardMaterial({ color:hex, metalness:.1, roughness:.9 });
+        else if(type==='cloth') m = new THREE.MeshStandardMaterial({ color:hex, roughness:1 });
+        else m = new THREE.MeshStandardMaterial({ color:hex, metalness:.1, roughness:.6 });
+        m.userData.baseHex = hex; mats.push(m); return m;
+    };
+    const P = (geo,w,h,d,mat)=>{
+        const m = new THREE.Mesh(geos[geo], mat);
+        if(geo==='box') m.scale.set(w,h,d);
+        else { m.scale.set(w,h,w); m.scale.z = d; }
+        return m;
+    };
+    // Custom-geometry part (blade taper, plume curve...) — built at real size, scale 1
+    const CB = (w,h,d,mat,mod)=>{
+        const g = new THREE.BoxGeometry(w,h,d);
+        if(mod){
+            const pa = g.attributes.position;
+            for(let i=0;i<pa.count;i++) mod(pa,i);
+            g.computeVertexNormals();
+        }
+        return new THREE.Mesh(g,mat);
+    };
+    const F = FACTIONS[faction];
+    const skin = M(PAL.skin[seed % PAL.skin.length]);
+    const cloth1 = M(F.color,'cloth');
+    const bronze = M(PAL.bronze,'metal'), dBronze = M(PAL.darkBronze,'metal');
+    const leather = M(PAL.leather,'leather'), wood = M(PAL.wood), iron = M(PAL.iron,'metal');
+    const crestM = M(F.crest,'cloth');
+
+    // Torso & pelvis
+    const pelvis = new THREE.Group(); pelvis.position.y = 1.4; group.add(pelvis);
+    const skirt = P('box',.55,.4,.35, tier>1?leather:cloth1); skirt.position.y = -.2; pelvis.add(skirt);
+    const torso = new THREE.Group(); torso.position.y = .2; pelvis.add(torso);
+    const chest = P('box',.6,.7,.3, tier===3?bronze : tier===2?M(PAL.clothWhite,'cloth') : skin);
+    chest.position.y = .35; torso.add(chest);
+    if(tier===3){ const belt = P('box',.62,.1,.32,leather); belt.position.y = .05; torso.add(belt); }
+
+    // Head & helmet
+    const headG = new THREE.Group(); headG.position.y = .75; torso.add(headG);
+    const neck = P('box',.15,.2,.15,skin); neck.position.y = .1; headG.add(neck);
+    const head = P('box',.35,.4,.35,skin); head.position.y = .3; headG.add(head);
+    if(tier>1 || cls==='Hoplite'){
+        const hm = tier===3?dBronze:bronze;
+        const cap = P('box',.38,.25,.38,hm); cap.position.y = .4; headG.add(cap);
+        if(tier===3 || cls==='Hoplite'){
+            const nose = P('box',.05,.15,.05,hm); nose.position.set(0,.25,.18); headG.add(nose);
+            const chL = P('box',.05,.2,.15,hm); chL.position.set(-.16,.2,.12); headG.add(chL);
+            const chR = P('box',.05,.2,.15,hm); chR.position.set(.16,.2,.12); headG.add(chR);
+        }
+        if(tier===3 || cls==='Hero'){
+            const cb = P('box',.08,.1,.35,hm); cb.position.y = .55; headG.add(cb);
+            const plume = CB(.06,.25,.45,crestM,(pa,i)=>{
+                const z = pa.getZ(i), y = pa.getY(i);
+                if(y>0) pa.setY(i, y - Math.pow(z*1.5,2));
+            });
+            plume.position.y = .7; headG.add(plume);
+        }
+    } else {
+        const hair = P('box',.37,.1,.37,M(0x111111)); hair.position.y = .46; headG.add(hair);
+    }
+
+    // Limbs
+    const buildArm = (isLeft)=>{
+        const arm = new THREE.Group(); const sg = isLeft?-1:1;
+        arm.position.set(sg*.4,.6,0);
+        if(tier===3){ const pad = P('box',.3,.2,.3,bronze); pad.position.set(sg*.05,.1,0); arm.add(pad); }
+        const upper = P('box',.15,.4,.15,skin); upper.position.y = -.2; arm.add(upper);
+        const elbow = new THREE.Group(); elbow.position.y = -.4; arm.add(elbow);
+        const lower = P('box',.13,.4,.13, tier===3?bronze : tier===2?leather : skin);
+        lower.position.y = -.2; elbow.add(lower);
+        const hand = P('box',.1,.15,.1,skin); hand.position.y = -.45; elbow.add(hand);
+        return { root:arm, elbow, hand };
+    };
+    const buildLeg = (isLeft)=>{
+        const leg = new THREE.Group(); const sg = isLeft?-1:1;
+        leg.position.set(sg*.18,-.4,0);
+        const thigh = P('box',.2,.5,.2,skin); thigh.position.y = -.25; leg.add(thigh);
+        const knee = new THREE.Group(); knee.position.y = -.5; leg.add(knee);
+        const calf = P('box',.18,.5,.18, tier===3?bronze:skin); calf.position.y = -.25; knee.add(calf);
+        const foot = P('box',.2,.1,.25,leather); foot.position.set(0,-.55,.05); knee.add(foot);
+        return { root:leg, knee };
+    };
+    const armL = buildArm(true), armR = buildArm(false);
+    torso.add(armL.root, armR.root);
+    const legL = buildLeg(true), legR = buildLeg(false);
+    pelvis.add(legL.root, legR.root);
+
+    // Weapons
+    const mkSpear = ()=>{
+        const sp = new THREE.Group();
+        const shaft = P('cyl',.03,2.5,.03,wood);
+        const tip = P('cyl',.04,.3,.01,iron); tip.position.y = 1.3;
+        const butt = P('cyl',.04,.2,.04,bronze); butt.position.y = -1.3;
+        sp.add(shaft,tip,butt); return sp;
+    };
+    const mkSword = ()=>{
+        const sw = new THREE.Group();
+        const hilt = P('box',.15,.05,.05,bronze);
+        const grip = P('cyl',.02,.15,.02,leather); grip.position.y = -.1;
+        const blade = CB(.08,.6,.02,iron,(pa,i)=>{ if(pa.getY(i)>0) pa.setX(i, pa.getX(i)*.1); });
+        blade.position.y = .3;
+        sw.add(hilt,grip,blade); return sw;
+    };
+    const mkHoplon = ()=>{
+        const sh = new THREE.Group();
+        const body = P('cyl',.45,.1,.45,bronze); body.rotation.x = Math.PI/2;
+        const pat = P('cyl',.3,.12,.3,M(F.pattern)); pat.rotation.x = Math.PI/2;
+        sh.add(body,pat); return sh;
+    };
+    const mkPelt = ()=> CB(.5,.5,.05,wood,(pa,i)=>{ if(pa.getY(i)>0 && Math.abs(pa.getX(i))<.1) pa.setY(i,.1); });
+
+    // Class poses
+    if(cls==='Hoplite'){
+        const spear = mkSpear();
+        armR.hand.add(spear);
+        armR.root.rotation.set(-Math.PI*.8, 0, .2);
+        const shield = mkHoplon();
+        shield.position.set(.1,.1,.1);
+        armL.hand.add(shield);
+        armL.root.rotation.set(-.2,.4,-.2);
+        armL.elbow.rotation.set(-1.2,0,0);
+        legL.root.rotation.x = -.2; legL.knee.rotation.x = .2;
+        legR.root.position.z = -.3; legR.root.rotation.x = .2; legR.knee.rotation.x = .1;
+        torso.rotation.y = .3; headG.rotation.y = -.3;
+    }
+    else if(cls==='Swordsman'){
+        const sword = mkSword();
+        armR.hand.add(sword);
+        sword.rotation.x = Math.PI/2;
+        armR.root.rotation.set(-.5,-.3,.3);
+        armR.elbow.rotation.set(-.5,0,0);
+        const shield = tier===3 ? mkHoplon() : mkPelt();
+        shield.position.set(.1,0,.1);
+        armL.hand.add(shield);
+        armL.root.rotation.set(-.2,0,-.2);
+        armL.elbow.rotation.set(-.5,0,0);
+        legL.root.position.x = -.25; legR.root.position.x = .25;
+        legL.root.rotation.z = -.1; legR.root.rotation.z = .1;
+    }
+    else if(cls==='Archer'){
+        const bowGeo = new THREE.CylinderGeometry(.02,.02,1.2,8);
+        const pa = bowGeo.attributes.position;
+        for(let i=0;i<pa.count;i++) pa.setZ(i, Math.abs(pa.getY(i))*.2);
+        bowGeo.computeVertexNormals();
+        const bow = new THREE.Mesh(bowGeo, wood);
+        armL.hand.add(bow);
+        armL.root.rotation.set(-Math.PI/2+.2, .5, -.2);
+        armR.root.rotation.set(-Math.PI/2, -.8, 0);
+        armR.elbow.rotation.set(-1.5,0,0);
+        torso.rotation.y = Math.PI/4; headG.rotation.y = -Math.PI/4;
+        const quiver = P('cyl',.1,.5,.1,leather);
+        quiver.position.set(0,.2,-.2); quiver.rotation.set(0,0,.5);
+        torso.add(quiver);
+    }
+    else if(cls==='Skirmisher'){
+        const javelin = mkSpear();
+        javelin.scale.multiplyScalar(.75);
+        armR.hand.add(javelin);
+        armR.root.rotation.set(Math.PI, 0, .5);
+        armR.elbow.rotation.set(-Math.PI/2,0,0);
+        javelin.rotation.x = Math.PI/2;
+        const bundle = mkSpear();
+        bundle.scale.multiplyScalar(.75);
+        armL.hand.add(bundle);
+        const shield = mkPelt();
+        shield.position.set(.1,0,.1);
+        armL.hand.add(shield);
+        armL.root.rotation.set(-.2,0,0);
+        torso.rotation.y = .5; headG.rotation.y = -.5;
+        legL.root.position.z = .3; legL.root.rotation.x = -.3; legL.knee.rotation.x = .3;
+        legR.root.position.z = -.3;
+    }
+    else if(cls==='Hero'){
+        const sword = mkSword();
+        sword.scale.setScalar(1.3);
+        armR.hand.add(sword);
+        sword.rotation.x = Math.PI/2;
+        const shield = mkHoplon();
+        shield.scale.setScalar(1.2);
+        shield.position.set(.1,.1,.1);
+        armL.hand.add(shield);
+        armR.root.rotation.set(-.5,-.5,.5);
+        armL.root.rotation.set(-.2,.5,-.5);
+        armL.elbow.rotation.set(-.5,0,0);
+        legL.root.rotation.set(0,0,-.2); legL.root.position.x = -.25;
+        legR.root.rotation.set(0,0,.2); legR.root.position.x = .25;
+        torso.position.y -= .1; headG.rotation.x = -.1;
+        const cape = P('box',.6,1.2,.05, M(F.secondary,'cloth'));
+        cape.position.set(0,.5,-.2); cape.rotation.x = .2;
+        torso.add(cape);
+    }
+    return { model:group, mats };
+}
+
 // ================= UNIT =================
 class Unit {
     constructor(id, team, type, x, z, ov={}){
@@ -418,7 +630,7 @@ class Unit {
         Object.assign(this, { id, team, type, x, z,
             maxHp:s.hp, hp:s.hp, atk:s.atk, mov:s.mov, rng:s.rng, baseColor:s.color,
             moved:false, acted:false, isDead:false,
-            mesh:null, body:null, bodyMat:null, hpFill:null, hpGhost:null, hpBar:null }, ov);
+            mesh:null, body:null, allMats:null, hpFill:null, hpGhost:null, hpBar:null }, ov);
     }
 }
 
@@ -484,10 +696,13 @@ class VoxelEngine {
         }, ()=>{ this.fxGroup.remove(m); m.material.dispose(); });
     }
     flashUnit(u, hex=0xffffff){
-        if(!u.bodyMat) return;
-        const em = u.bodyMat.emissive;
-        addTween(200, p=>{ em.setHex(hex); em.multiplyScalar(1-p); }, ()=>em.setHex(0x000000));
+        if(!u.allMats) return;
+        addTween(200, p=>{
+            u.allMats.forEach(m=>{ m.emissive.setHex(hex); m.emissive.multiplyScalar(1-p); });
+        }, ()=>u.allMats.forEach(m=>m.emissive.setHex(0x000000)));
     }
+    dimUnit(u){ u.allMats?.forEach(m=>m.color.setHex(m.userData.baseHex).multiplyScalar(.35)); }
+    brightenUnit(u){ u.allMats?.forEach(m=>m.color.setHex(m.userData.baseHex)); }
     generateMap(){
         for(let x=-MAP/2; x<MAP/2; x++){
             for(let z=-MAP/2; z<MAP/2; z++){
@@ -525,17 +740,14 @@ class VoxelEngine {
     tileY(x,z){ const t = this.grid[key(x,z)]; return (t?t.height:0)*TILE; }
     createUnitMesh(u, spawnDelay=0){
         const g = new THREE.Group();
-        const scale = (u.type==='Warlord'||u.type==='Brute') ? 1.25 : 1;
-        u.bodyMat = new THREE.MeshStandardMaterial({ color:u.baseColor });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(TILE*.6,TILE*.6,TILE*.6), u.bodyMat);
-        body.position.y = TILE*.3; body.castShadow = true;
-        u.body = body;
-        const head = new THREE.Mesh(new THREE.BoxGeometry(TILE*.4,TILE*.4,TILE*.4), new THREE.MeshStandardMaterial({color:0xFFCCBC}));
-        head.position.y = TILE*.85; head.castShadow = true;
-        const eyeGeo = new THREE.BoxGeometry(TILE*.1,TILE*.1,TILE*.1);
-        const eyeMat = new THREE.MeshBasicMaterial({color:0x000});
-        const le = new THREE.Mesh(eyeGeo,eyeMat), re = new THREE.Mesh(eyeGeo,eyeMat);
-        le.position.set(-TILE*.1,TILE*.9,TILE*.2); re.position.set(TILE*.1,TILE*.9,TILE*.2);
+        const scale = (u.type==='Warlord'||u.type==='Brute') ? 1.18 : 1;
+        const spec = TYPES[u.type];
+        const seed = Math.abs(u.id*7 + u.x*3 + u.z*5 + (u.team==='player'?1:2));
+        const { model, mats } = buildWarrior(spec.cls, spec.tier, u.team, seed);
+        model.scale.setScalar(.052*scale);
+        model.traverse(m=>{ m.castShadow = false; m.receiveShadow = false; });
+        u.body = model;
+        u.allMats = mats;
         const disc = new THREE.Mesh(new THREE.CircleGeometry(TILE*.42,20).rotateX(-Math.PI/2),
             new THREE.MeshBasicMaterial({ color: u.team==='player'?COLORS.TEAM_P:COLORS.TEAM_E, transparent:true, opacity:.55 }));
         disc.position.y = .002;
@@ -547,23 +759,22 @@ class VoxelEngine {
         u.hpFill.position.z = .001;
         bg.renderOrder = 990; u.hpGhost.renderOrder = 991; u.hpFill.renderOrder = 992;
         bar.add(bg, u.hpGhost, u.hpFill);
-        bar.position.y = TILE*1.35*scale;
+        bar.position.y = TILE*1.95*scale;
         u.hpBar = bar;
-        const hit = new THREE.Mesh(new THREE.BoxGeometry(TILE*1.1,TILE*1.5,TILE*1.1), new THREE.MeshBasicMaterial({visible:false}));
-        hit.position.y = TILE*.75;
-        g.add(hit, body, head, le, re, disc, bar);
+        const hit = new THREE.Mesh(new THREE.BoxGeometry(TILE*1.1,TILE*1.9,TILE*1.1), new THREE.MeshBasicMaterial({visible:false}));
+        hit.position.y = TILE*.9;
+        g.add(hit, model, disc, bar);
         // Ready marker: bobbing green arrow = "this hero can still act"
         if(u.team==='player'){
             const mk = new THREE.Mesh(new THREE.ConeGeometry(.013,.028,6).rotateX(Math.PI),
                 new THREE.MeshBasicMaterial({ color:0x4CAF50, depthTest:false, transparent:true, opacity:.95 }));
             mk.renderOrder = 993;
             mk.raycast = ()=>{};
-            mk.position.y = TILE*1.6*scale;
+            mk.position.y = TILE*2.25*scale;
             mk.visible = false;
             u.readyMark = mk;
             g.add(mk);
         }
-        body.scale.setScalar(scale); head.scale.setScalar(scale);
         const gy = this.tileY(u.x,u.z);
         g.position.set(u.x*TILE, gy, u.z*TILE);
         g.userData = { isUnit:true, unitRef:u, x:u.x, z:u.z };
@@ -680,8 +891,8 @@ class VoxelEngine {
         this.faceTowards(a.mesh, d.mesh.position);
         punch(a.body, .25, 160);
         const m = new THREE.Mesh(new THREE.BoxGeometry(.014,.014,.03), new THREE.MeshBasicMaterial({color:0xFFEB3B}));
-        const from = a.mesh.position.clone(); from.y += TILE*.6;
-        const to = d.mesh.position.clone(); to.y += TILE*.6;
+        const from = a.mesh.position.clone(); from.y += TILE*1.1;
+        const to = d.mesh.position.clone(); to.y += TILE*1.1;
         this.fxGroup.add(m);
         addTween(260, p=>{
             m.position.lerpVectors(from, to, p);
@@ -803,7 +1014,7 @@ class Game {
         this.units.forEach(u=>{
             if(u.team===team && !u.isDead){
                 u.moved = u.acted = false;
-                u.bodyMat.color.setHex(u.baseColor);
+                this.engine.brightenUnit(u);
             }
         });
         this.ui.showTurn(team, this.alive('player').length, this.alive('enemy').length, this.mission);
@@ -991,8 +1202,7 @@ class Game {
     finishUnit(u){
         if(this.over || this.state==='UPGRADE') return;
         u.acted = true; u.moved = true;
-        u.bodyMat.color.setHex(u.baseColor);
-        u.bodyMat.color.multiplyScalar(.35);
+        this.engine.dimUnit(u);
         this.deselect();
         if(this.alive('player').every(p=>p.acted)){
             const mid = this.mid;
@@ -1255,7 +1465,7 @@ function pickTarget(ctrl){
     };
     game.units.forEach(u=>{
         if(u.isDead || !u.mesh) return;
-        consider(u.mesh, u.team==='player' ? .7 : .85, TILE*.5*engine.boardRoot.scale.x);
+        consider(u.mesh, u.team==='player' ? .7 : .85, TILE*.9*engine.boardRoot.scale.x);
     });
     engine.highlights.forEach(h=>consider(h, 1));
     if(ui.group.visible) ui.group.traverse(o=>{
@@ -1308,7 +1518,7 @@ function render(t, frame){
                     hk = key(u.x,u.z);
                     engine.cursor.visible = true;
                     const h = u.isUnit ? engine.grid[key(u.unitRef.x,u.unitRef.z)]?.height||0 : (u.h||0);
-                    engine.cursor.position.set(u.x*TILE, h*TILE + TILE*1.8, u.z*TILE);
+                    engine.cursor.position.set(u.x*TILE, h*TILE + TILE*2.6, u.z*TILE);
                 } else engine.cursor.visible = false;
             } else engine.cursor.visible = false;
             if(hk !== hoveredKey){ hoveredKey = hk; if(hk) sfx.tone(1200,.02,'sine',.02); }
@@ -1342,7 +1552,7 @@ function render(t, frame){
                 u.readyMark.visible = !u.acted && game.turn==='player' && !game.over
                     && ['IDLE','SELECTED'].includes(game.state);
                 if(u.readyMark.visible)
-                    u.readyMark.position.y = TILE*1.6 + Math.sin(t/250+i)*.007;
+                    u.readyMark.position.y = TILE*2.25 + Math.sin(t/250+i)*.007;
             }
         });
         if(t > nextHop && (game.state==='IDLE'||game.state==='SELECTED')){
